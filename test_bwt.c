@@ -56,6 +56,23 @@ int main(void)
     uint64_t lo, hi;
     backward_search(fm, "ATCG", 4, &lo, &hi);
     printf("ATCG found at SA rows [%llu, %llu]\n", lo, hi);
+    
+    const char *read = "ATCGATCG";
+    uint64_t m       = strlen(read);
+    SMEM smems[64];
+
+    int n_smems = find_smems(fm, read, m, smems);
+
+    printf("found %d SMEM(s):\n", n_smems);
+    for (int i = 0; i < n_smems; i++) {
+        printf("  [%llu, %llu)  SA rows [%llu, %llu]  hits=%llu\n",
+            smems[i].qbeg,
+            smems[i].qend,
+            smems[i].lo,
+            smems[i].hi,
+            smems[i].hi - smems[i].lo + 1);
+    }
+    
     sa_free(sa);
     bwt_free(bwt);
     fm_free(fm);

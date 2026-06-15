@@ -75,3 +75,10 @@ void     fm_free(FMIndex *fm);
 uint64_t lf_map(const FMIndex *fm, uint64_t i);
 
 #endif /* BWA_BWT_H */
+
+typedef struct {
+    uint64_t qbeg;   /* ตำแหน่งเริ่มใน read  */
+    uint64_t qend;   /* ตำแหน่งสิ้นสุดใน read */
+    uint64_t lo;     /* SA range เริ่ม        */
+    uint64_t hi;     /* SA range สิ้นสุด      */
+} SMEM;
