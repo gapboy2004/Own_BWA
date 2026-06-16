@@ -1,0 +1,10 @@
+# Ignore all files with a specific extension
+*.log
+*.tmp
+*.o
+
+# Ignore local environment variables
+.env
+
+# Ignore an entire folder and all its contents
+.vscode/
