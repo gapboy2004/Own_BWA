@@ -98,5 +98,21 @@ typedef struct {
     char cigar[256];
 } SWResult;
 
-SWResult sw_extend(const char *read,   int qlen,
-                   const char *ref,    int rlen);
+int find_smems(const FMIndex *fm, 
+               const char *read, 
+               uint64_t m, 
+               SMEM *smems);
+
+int chain_seeds(const uint32_t *SA, 
+                SMEM *smems, 
+                int n_smems, 
+                ChainSeed *seeds);
+
+/* ── SW Extension ────────────────────────────────────────── */
+// (คงเดิมไว้ที่นี่ได้ แต่แนะนำให้แยกไฟล์ในอนาคต)
+SWResult sw_extend(const char *read, int qlen, 
+                   const char *ref, int rlen);
+
+/* ── Helper functions ที่ขาดใน Header ────────────────────── */
+void lf_roundtrip(const FMIndex *fm);
+void backward_search(const FMIndex *fm, const char *pattern, uint64_t m, uint64_t *lo, uint64_t *hi);

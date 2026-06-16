@@ -1,98 +1,81 @@
-/* test_bwt.c */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <inttypes.h> // ใช้สำหรับ PRIu64 เพื่อความปลอดภัยของ Format
 #include "bwt.h"
 
 int main(void)
 {
-    const char *text = "ATCGATCG$";
-    uint64_t n = strlen(text) - 1; /* 6 ไม่นับ $ */
+    const char *text = "ACGTACGTACGT$";
+    uint64_t n = strlen(text) - 1;
 
+    /* 1. Build Index ตามลำดับ */
     SuffixArray *sa = build_suffix_array(text, n);
-
-    /* พิมพ์ SA แต่ละแถว */
-    printf("i\tsa[i]\tsuffix\n");
-    printf("─────────────────────────\n");
-    for (uint64_t i = 0; i <= n; i++)
-        printf("%llu\t%u\t%s\n", (unsigned long long)i, sa->sa[i], text + sa->sa[i]);
-
     BWT *bwt = build_bwt_from_sa(text, sa);
-    /* พิมพ์ BWT */
-    printf("\nbwt: ");
-    for (uint64_t i = 0; i < bwt->n; i++)
-        printf("%c", decode_base(bwt->bwt[i]));
-    printf("\n");
-
-    /* พิมพ์ FM Index */
     FMIndex *fm = build_fm_index(bwt);
 
-    // printf("\nFM Index:\n");
-    // printf("C:\n");
-    // for (int c = 0; c < ALPHA_SIZE; c++)
-    //      printf("C[%c] = %llu\n", decode_base(c), (unsigned long long)fm->C[c]);
-    // printf("\nOcc:\n");
-    // for (int c = 0; c < ALPHA_SIZE; c++) {
-    //     printf("Occ[%c]: ", decode_base(c));
-    //     for (uint64_t i = 0; i <= bwt->n; i++)
-    //         printf("%llu ", (unsigned long long)fm->Occ[c][i]);
-    //     printf("\n");
-    // }
+    /* 2. พิมพ์ Suffix Array */
+    printf("i\tSA[i]\tSuffix\n");
+    printf("─────────────────────────\n");
+    for (uint64_t i = 0; i <= n; i++)
+        printf("%" PRIu64 "\t%u\t%s\n", i, sa->sa[i], text + sa->sa[i]);
 
-    /* ทดสอบ LF-mapping */
-    printf("\nLF-mapping:\n");
-    for (uint64_t i = 0; i < bwt->n; i++)
-    {
-        uint64_t lf_i = lf_map(fm, i);
-        printf("LF(%llu) = %llu\n", (unsigned long long)i, (unsigned long long)lf_i);
-    }
-    /* ทดสอบ LF-mapping แบบกลับด้าน */
-    printf("\nLF-roundtrip:\n");
-    lf_roundtrip(fm);
-
-    printf("i\tbwt[i]\tLF(i)\n");
-    for (uint64_t i = 0; i < fm->bwt->n; i++)
-        printf("%llu\t%c\t%llu\n", i, decode_base(fm->bwt->bwt[i]), lf_map(fm, i));
-
-    uint64_t lo, hi;
-    backward_search(fm, "ATCG", 4, &lo, &hi);
-    printf("ATCG found at SA rows [%llu, %llu]\n", lo, hi);
-    
-    const char *read = "ATCGXXXXCGATCG";
+    /* 3. ทดสอบการค้นหา (SMEMs) */
+    const char *read = "ACGTACGT";
     uint64_t m = strlen(read);
+    
+    // ใช้ขนาดที่เหมาะสม หรือจัดการแบบ Dynamic ถ้า Read ยาวขึ้น
     SMEM smems[64];
     ChainSeed seeds[256];
 
     int n_smems = find_smems(fm, read, m, smems);
-    int n_seeds = chain_seeds(sa, smems, n_smems, seeds);
+    int n_seeds = chain_seeds(sa->sa, smems, n_smems, seeds);
 
-    /* หา seed ที่มี score สูงสุด แล้ว traceback */
-    int best = 0;
-    for (int i = 1; i < n_seeds; i++)
-        if (seeds[i].score > seeds[best].score) best = i;
+    if (n_seeds > 0) {
+        /* หา seed ที่มี score สูงสุด */
+        int best = 0;
+        for (int i = 1; i < n_seeds; i++)
+            if (seeds[i].score > seeds[best].score)
+                best = i;
 
-    /* traceback */
-    printf("best chain (score=%d):\n", seeds[best].score);
-    int idx = best;
-    while (idx != -1) {
-        printf("  read[%llu,%llu) → genome pos %llu\n",
-            seeds[idx].qbeg, seeds[idx].qend, seeds[idx].rpos);
-        idx = seeds[idx].prev;
+        /* Traceback หาจุดเริ่ม Alignment ที่แท้จริง */
+        int idx = best;
+        int first = best;
+        while (seeds[idx].prev != -1) {
+            idx = seeds[idx].prev;
+            first = idx;
+        }
+
+        uint64_t alignment_start = (uint64_t)seeds[first].rpos - seeds[first].qbeg;
+
+        printf("\nBest chain (score=%d):\n", seeds[best].score);
+        printf("Alignment starts at genome pos: %" PRIu64 "\n", alignment_start);
+        
+        /* แสดงรายการ Seed ใน Chain */
+        idx = best;
+        while (idx != -1) {
+            printf("  read[%" PRIu64 ",%" PRIu64 ") → ref pos %" PRIu64 "\n",
+                   seeds[idx].qbeg, seeds[idx].qend, seeds[idx].rpos);
+            idx = seeds[idx].prev;
+        }
+    } else {
+        printf("\nNo seeds found.\n");
     }
 
-    const char *ref  = "ATCGTTTTCGATCG";
-    
-    SWResult r;
-    r = sw_extend(read, strlen(read), ref, strlen(ref));
+    /* 4. Smith-Waterman Extension */
+    printf("\n--- Smith-Waterman ---\n");
+    const char *ref = "ACGTACGTACGT";
+    SWResult r = sw_extend(read, (int)m, ref, (int)strlen(ref));
 
-    printf("score : %d\n",   r.score);
+    printf("score : %d\n", r.score);
     printf("query : [%d,%d)\n", r.qbeg, r.qend);
     printf("ref   : [%d,%d)\n", r.rbeg, r.rend);
-    printf("cigar : %s\n",   r.cigar);
+    printf("cigar : %s\n", r.cigar);
 
-    
-
-    sa_free(sa);
-    bwt_free(bwt);
+    /* 5. Cleanup ตามลำดับการสร้าง (ย้อนหลัง) */
     fm_free(fm);
+    bwt_free(bwt);
+    sa_free(sa);
+
     return 0;
 }

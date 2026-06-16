@@ -7,10 +7,9 @@ void backward_search(const FMIndex *fm,
                      uint64_t m,   /* ความยาว pattern */
                      uint64_t *lo, /* output: range เริ่ม */
                      uint64_t *hi)
-{ /* output: range สิ้นสุด */
+{ 
     *lo = 0;
     *hi = fm->bwt->n - 1;
-
     for (int64_t i = m - 1; i >= 0; i--)
     {
         uint8_t c = encode_base(pattern[i]);
@@ -24,62 +23,47 @@ void backward_search(const FMIndex *fm,
         }
     }
 }
-
-int find_smems(const FMIndex *fm,
-               const char *read,
-               uint64_t m,
-               SMEM *smems)
+int find_smems(const FMIndex *fm, const char *read, uint64_t m, SMEM *smems)
 {
-
     int n_smems = 0;
-    uint64_t i = 0; /* position ปัจจุบันใน read */
-
-    while (i < m)
+    // เราต้องถอยหลังจากตัวสุดท้ายของ read ย้อนกลับมา
+    // นี่คือการทำ Backward search แบบมาตรฐาน
+    uint64_t i = m; 
+    while (i > 0)
     {
         uint64_t lo = 0;
         uint64_t hi = fm->bwt->n - 1;
-        uint64_t j = i; /* ขยายไปขวาจาก i */
-        uint64_t last_lo = lo, last_hi = hi;
-
-        /* ขยาย pattern ไปขวาจนกว่า range จะ empty */
-        while (j < m)
+        uint64_t j = i - 1; /* เริ่มจากตัวสุดท้าย */
+        
+        // ขยายย้อนไปทางซ้าย
+        while (j < m) 
         {
             uint8_t c = encode_base(read[j]);
+            if (c >= ALPHA_SIZE) break;
 
-            if (c >= ALPHA_SIZE) // testcase: ถ้าเจอ base ที่ไม่รู้จัก (เช่น 'N') ให้หยุดขยาย
-            {          
-                j++;   
-                break; 
-            }
-            
             uint64_t nlo = fm->C[c] + fm->Occ[c][lo];
             uint64_t nhi = fm->C[c] + fm->Occ[c][hi + 1] - 1;
 
-            if (nlo > nhi)
-                break; /* ขยายต่อไม่ได้ → หยุด */
+            if (nlo > nhi) break;
 
-            last_lo = nlo;
-            last_hi = nhi;
-            j++;
+            lo = nlo;
+            hi = nhi;
+            if (j == 0) break; // ถึงตัวแรกของ read แล้ว
+            j--;
         }
 
-        /* บันทึก SMEM ถ้า match อย่างน้อย 1 ตัว */
-        if (j > i)
-        {
-            smems[n_smems].qbeg = i;
-            smems[n_smems].qend = j;
-            smems[n_smems].lo = last_lo;
-            smems[n_smems].hi = last_hi;
+        // หาก match ได้ ให้บันทึก
+        if (i - j > 0) {
+            smems[n_smems].qbeg = j;
+            smems[n_smems].qend = i;
+            smems[n_smems].lo = lo;
+            smems[n_smems].hi = hi;
             n_smems++;
-
-            i = j; /* กระโดดไป position ถัดจาก SMEM */
-        }
-        else
-        {
-            i++; /* ตัวนี้ match ไม่ได้เลย ข้ามไป */
+            i = j; // กระโดดข้าม match ที่เจอไป
+        } else {
+            i--;
         }
     }
-
     return n_smems;
 }
 
@@ -91,15 +75,12 @@ int chain_seeds(const uint32_t *SA,
                 int n_smems,
                 ChainSeed *seeds)
 {
-
     int n_seeds = 0;
-
-    /* Step 1: expand SMEM → seed แต่ละ hit */
-    for (int i = 0; i < n_smems; i++)
-    {
-        for (uint64_t r = smems[i].lo; r <= smems[i].hi; r++)
-        {
-            seeds[n_seeds].rpos = SA[r];
+    
+    /* Step 1: สร้าง Seeds จาก SMEMs */
+    for (int i = 0; i < n_smems; i++) {
+        for (uint64_t r = smems[i].lo; r <= smems[i].hi; r++) {
+            seeds[n_seeds].rpos = SA[r]; 
             seeds[n_seeds].qbeg = smems[i].qbeg;
             seeds[n_seeds].qend = smems[i].qend;
             seeds[n_seeds].score = (int)(smems[i].qend - smems[i].qbeg);
@@ -108,14 +89,10 @@ int chain_seeds(const uint32_t *SA,
         }
     }
 
-    /* Step 2: เรียง seed ตาม rpos */
-    /* naive bubble sort — Phase 1 */
-    for (int i = 0; i < n_seeds - 1; i++)
-    {
-        for (int j = i + 1; j < n_seeds; j++)
-        {
-            if (seeds[j].rpos < seeds[i].rpos)
-            {
+    /* Step 2: เรียง Seed ตามตำแหน่งใน Ref (rpos) เพื่อเตรียมทำ DP */
+    for (int i = 0; i < n_seeds - 1; i++) {
+        for (int j = i + 1; j < n_seeds; j++) {
+            if (seeds[j].rpos < seeds[i].rpos) {
                 ChainSeed tmp = seeds[i];
                 seeds[i] = seeds[j];
                 seeds[j] = tmp;
@@ -124,32 +101,24 @@ int chain_seeds(const uint32_t *SA,
     }
 
     /* Step 3: DP หา chain score */
-    for (int i = 1; i < n_seeds; i++)
-    {
-        for (int j = 0; j < i; j++)
-        {
-
-            /* เงื่อนไข chain ได้ */
-            if (seeds[j].qbeg >= seeds[i].qbeg)
-                continue; /* read ต้องไม่สลับ  */
-            if (seeds[j].rpos >= seeds[i].rpos)
-                continue; /* genome ต้องไม่สลับ */
+    for (int i = 1; i < n_seeds; i++) {
+        for (int j = 0; j < i; j++) {
+            // เงื่อนไข: Seed ต้องเรียงลำดับไปข้างหน้าในทั้ง Query และ Ref
+            if (seeds[j].qbeg >= seeds[i].qbeg || seeds[j].rpos >= seeds[i].rpos)
+                continue;
 
             uint64_t gap = seeds[i].rpos - seeds[j].rpos;
-            if (gap > MAX_GAP)
-                continue; /* ไม่ไกลเกินไป      */
+            if (gap > MAX_GAP) continue;
 
             int len_i = (int)(seeds[i].qend - seeds[i].qbeg);
             int penalty = (int)gap * GAP_PENALTY;
             int new_score = seeds[j].score + len_i - penalty;
 
-            if (new_score > seeds[i].score)
-            {
+            if (new_score > seeds[i].score) {
                 seeds[i].score = new_score;
                 seeds[i].prev = j;
             }
         }
     }
-
     return n_seeds;
 }
