@@ -82,3 +82,21 @@ typedef struct {
     uint64_t lo;     /* SA range เริ่ม        */
     uint64_t hi;     /* SA range สิ้นสุด      */
 } SMEM;
+
+typedef struct {
+    uint64_t rpos;   /* ตำแหน่งใน genome (จาก SA) */
+    uint64_t qbeg;   /* ตำแหน่งเริ่มใน read       */
+    uint64_t qend;   /* ตำแหน่งสิ้นสุดใน read     */
+    int      score;  /* chain score                */
+    int      prev;   /* index ของ SMEM ก่อนหน้า   */
+} ChainSeed;
+
+typedef struct {
+    int  score;
+    int  qbeg, qend;
+    int  rbeg, rend;
+    char cigar[256];
+} SWResult;
+
+SWResult sw_extend(const char *read,   int qlen,
+                   const char *ref,    int rlen);

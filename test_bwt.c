@@ -57,22 +57,40 @@ int main(void)
     backward_search(fm, "ATCG", 4, &lo, &hi);
     printf("ATCG found at SA rows [%llu, %llu]\n", lo, hi);
     
-    const char *read = "ATCGATCG";
-    uint64_t m       = strlen(read);
+    const char *read = "ATCGXXXXCGATCG";
+    uint64_t m = strlen(read);
     SMEM smems[64];
+    ChainSeed seeds[256];
 
     int n_smems = find_smems(fm, read, m, smems);
+    int n_seeds = chain_seeds(sa, smems, n_smems, seeds);
 
-    printf("found %d SMEM(s):\n", n_smems);
-    for (int i = 0; i < n_smems; i++) {
-        printf("  [%llu, %llu)  SA rows [%llu, %llu]  hits=%llu\n",
-            smems[i].qbeg,
-            smems[i].qend,
-            smems[i].lo,
-            smems[i].hi,
-            smems[i].hi - smems[i].lo + 1);
+    /* หา seed ที่มี score สูงสุด แล้ว traceback */
+    int best = 0;
+    for (int i = 1; i < n_seeds; i++)
+        if (seeds[i].score > seeds[best].score) best = i;
+
+    /* traceback */
+    printf("best chain (score=%d):\n", seeds[best].score);
+    int idx = best;
+    while (idx != -1) {
+        printf("  read[%llu,%llu) → genome pos %llu\n",
+            seeds[idx].qbeg, seeds[idx].qend, seeds[idx].rpos);
+        idx = seeds[idx].prev;
     }
+
+    const char *ref  = "ATCGTTTTCGATCG";
     
+    SWResult r;
+    r = sw_extend(read, strlen(read), ref, strlen(ref));
+
+    printf("score : %d\n",   r.score);
+    printf("query : [%d,%d)\n", r.qbeg, r.qend);
+    printf("ref   : [%d,%d)\n", r.rbeg, r.rend);
+    printf("cigar : %s\n",   r.cigar);
+
+    
+
     sa_free(sa);
     bwt_free(bwt);
     fm_free(fm);

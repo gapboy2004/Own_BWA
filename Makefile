@@ -1,6 +1,6 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -O2 -g -std=c11
-SRCS    = bwt_build.c fm_index.c bwt_smem.c
+SRCS    = bwt_build.c fm_index.c bwt_smem.c bwt_sw.c
 OBJS    = $(SRCS:.c=.o)
 
 .PHONY: all test clean
