@@ -72,7 +72,7 @@ SWResult sw_extend(const char *read, int qlen,
 
         // คำนวณ band boundary สำหรับ row นี้
         int j_lo = MAX(1, i - w);
-        int j_hi = MIN(rlen, i + w );
+        int j_hi = MIN(rlen, i + w + offset);
 
         for (int j = j_lo; j <= j_hi; j++)
         {
