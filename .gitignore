@@ -8,3 +8,4 @@
 
 # Ignore an entire folder and all its contents
 .vscode/
+*.o

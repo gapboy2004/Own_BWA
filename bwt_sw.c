@@ -4,31 +4,34 @@
 #include <stdlib.h>
 #include "bwt.h"
 
-#define MATCH     2
+#define MATCH 2
 #define MISMATCH -3
 #define GAP_OPEN -4
-#define GAP_EXT  -1
+#define GAP_EXT -1
 
-#define MAX(a,b) ((a)>(b)?(a):(b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 #define STOP 0
 #define FROM_DIAG 1
 #define FROM_LEFT 2
-#define FROM_UP   3
+#define FROM_UP 3
 
 SWResult sw_extend(const char *read, int qlen,
-                   const char *ref,  int rlen)
+                   const char *ref, int rlen)
 {
     /* --- allocate --- */
-    int **H  = malloc((qlen+1) * sizeof(int*));
-    int **E  = malloc((qlen+1) * sizeof(int*));
-    int **F  = malloc((qlen+1) * sizeof(int*));
-    int **tb = malloc((qlen+1) * sizeof(int*));
-    for(int i = 0; i <= qlen; i++){
-        H[i]  = calloc(rlen+1, sizeof(int));
-        E[i]  = calloc(rlen+1, sizeof(int));
-        F[i]  = calloc(rlen+1, sizeof(int));
-        tb[i] = calloc(rlen+1, sizeof(int));
+    int **H = malloc((qlen + 1) * sizeof(int *));
+    int **E = malloc((qlen + 1) * sizeof(int *));
+    int **F = malloc((qlen + 1) * sizeof(int *));
+    int **tb = malloc((qlen + 1) * sizeof(int *));
+    for (int i = 0; i <= qlen; i++)
+    {
+        H[i] = calloc(rlen + 1, sizeof(int));
+        E[i] = calloc(rlen + 1, sizeof(int));
+        F[i] = calloc(rlen + 1, sizeof(int));
+        tb[i] = calloc(rlen + 1, sizeof(int));
     }
 
     /* --- init row 0 และ col 0 (semi-global) --- */
@@ -43,35 +46,66 @@ SWResult sw_extend(const char *read, int qlen,
     //     tb[i][0] = FROM_UP;
     // }
 
-    for(int j = 1; j <= rlen; j++){
-        H[0][j]  = 0;
+    for (int j = 1; j <= rlen; j++)
+    {
+        H[0][j] = 0;
         F[0][j] = -99;
-        E[0][j]  = -99;
+        E[0][j] = -99;
         tb[0][j] = -99;
     }
-    for(int i = 1; i <= qlen; i++){
-        H[i][0]  = 0;
-        F[i][0]  = -99;
-        E[i][0]  = -99;
+    for (int i = 1; i <= qlen; i++)
+    {
+        H[i][0] = 0;
+        F[i][0] = -99;
+        E[i][0] = -99;
         tb[i][0] = -99;
     }
 
     int best_score = INT_MIN, best_i = qlen, best_j = rlen;
 
+    // offset สำหรับกรณี ref ยาวกว่า query
+    int offset = rlen - qlen;
+    int w = 1;
     /* --- fill --- */
-    for(int i = 1; i <= qlen; i++){
-        for(int j = 1; j <= rlen; j++){
+    for (int i = 1; i <= qlen; i++)
+    {
 
-            E[i][j] = MAX(H[i][j-1] + GAP_OPEN,
-                          E[i][j-1] + GAP_EXT);
+        // คำนวณ band boundary สำหรับ row นี้
+        int j_lo = MAX(1, i - w);
+        int j_hi = MIN(rlen, i + w );
 
-            F[i][j] = MAX(H[i-1][j] + GAP_OPEN,
-                          F[i-1][j] + GAP_EXT);
+        for (int j = j_lo; j <= j_hi; j++)
+        {
+            //local aligment
+            // E[i][j] = MAX(H[i][j-1] + GAP_OPEN,
+            //               E[i][j-1] + GAP_EXT);
 
-            int sub  = (read[i-1] == ref[j-1]) ? MATCH : MISMATCH;
-            int diag = H[i-1][j-1] + sub;
+            // F[i][j] = MAX(H[i-1][j] + GAP_OPEN,
+            //               F[i-1][j] + GAP_EXT);
 
-            H[i][j] = MAX(MAX(MAX(diag, E[i][j]), F[i][j]),0);  /* ไม่มี 0 */
+            if (j - 1 >= j_lo)
+            {
+                E[i][j] = MAX(H[i][j - 1] + GAP_OPEN,
+                              E[i][j - 1] + GAP_EXT);
+            }
+            else
+                E[i][j] = -98;
+
+            // F: gap in query (vertical) — ตรวจแค่ถ้า i-1 อยู่ใน band
+            if (abs((i - 1) - j) <= w)
+            {
+                F[i][j] = MAX(H[i - 1][j] + GAP_OPEN,
+                              F[i - 1][j] + GAP_EXT);
+            }
+            else
+            {
+                F[i][j] = -98;
+            }
+
+            int sub = (read[i - 1] == ref[j - 1]) ? MATCH : MISMATCH;
+            int diag = H[i - 1][j - 1] + sub;
+
+            H[i][j] = MAX(MAX(MAX(diag, E[i][j]), F[i][j]), 0); /* ไม่มี 0 */
 
             if (H[i][j] == 0)
                 tb[i][j] = STOP;
@@ -82,15 +116,19 @@ SWResult sw_extend(const char *read, int qlen,
             else
                 tb[i][j] = FROM_UP;
 
-            if(H[i][j] > best_score){
+            if (H[i][j] > best_score)
+            {
                 best_score = H[i][j];
-                best_i = i; best_j = j;
+                best_i = i;
+                best_j = j;
             }
         }
     }
     printf("H matrix:\n");
-    for(int i = 0; i <= qlen; i++){
-        for(int j = 0; j <= rlen; j++){
+    for (int i = 0; i <= qlen; i++)
+    {
+        for (int j = 0; j <= rlen; j++)
+        {
 
             printf("%d \t", H[i][j]);
         }
@@ -98,24 +136,30 @@ SWResult sw_extend(const char *read, int qlen,
     }
 
     printf("E matrix:\n");
-    for(int i = 0; i <= qlen; i++){
-        for(int j = 0; j <= rlen; j++){
+    for (int i = 0; i <= qlen; i++)
+    {
+        for (int j = 0; j <= rlen; j++)
+        {
 
             printf("%d \t", E[i][j]);
         }
         printf("\n");
     }
     printf("F matrix:\n");
-    for(int i = 0; i <= qlen; i++){
-        for(int j = 0; j <= rlen; j++){
+    for (int i = 0; i <= qlen; i++)
+    {
+        for (int j = 0; j <= rlen; j++)
+        {
 
             printf("%d \t", F[i][j]);
         }
         printf("\n");
     }
     printf("tb matrix:\n");
-    for(int i = 0; i <= qlen; i++){
-        for(int j = 0; j <= rlen; j++){
+    for (int i = 0; i <= qlen; i++)
+    {
+        for (int j = 0; j <= rlen; j++)
+        {
 
             printf("%d \t", tb[i][j]);
         }
@@ -124,17 +168,24 @@ SWResult sw_extend(const char *read, int qlen,
 
     /* --- traceback --- */
     char raw_cigar[512];
-    int  clen = 0;
-    int  i = best_i, j = best_j;
+    int clen = 0;
+    int i = best_i, j = best_j;
 
-    while(i > 0 && j > 0){
-        if(tb[i][j] == FROM_DIAG){
-            raw_cigar[clen++] = (read[i-1]==ref[j-1]) ? 'M' : 'X';
-            i--; j--;
-        } else if(tb[i][j] == FROM_LEFT){
+    while (i > 0 && j > 0)
+    {
+        if (tb[i][j] == FROM_DIAG)
+        {
+            raw_cigar[clen++] = (read[i - 1] == ref[j - 1]) ? 'M' : 'X';
+            i--;
+            j--;
+        }
+        else if (tb[i][j] == FROM_LEFT)
+        {
             raw_cigar[clen++] = 'D';
             j--;
-        } else {
+        }
+        else
+        {
             raw_cigar[clen++] = 'I';
             i--;
         }
@@ -143,26 +194,40 @@ SWResult sw_extend(const char *read, int qlen,
     /* --- build result --- */
     SWResult res;
     res.score = best_score;
-    res.qbeg  = i;   res.qend = best_i;
-    res.rbeg  = j;   res.rend = best_j;
+    res.qbeg = i;
+    res.qend = best_i;
+    res.rbeg = j;
+    res.rend = best_j;
 
     /* compress cigar */
     int ci = 0;
-    for(int k = clen-1; k >= 0;){
-        char op  = raw_cigar[k];
-        int  cnt = 0;
-        while(k >= 0 && raw_cigar[k] == op){ cnt++; k--; }
+    for (int k = clen - 1; k >= 0;)
+    {
+        char op = raw_cigar[k];
+        int cnt = 0;
+        while (k >= 0 && raw_cigar[k] == op)
+        {
+            cnt++;
+            k--;
+        }
         ci += sprintf(res.cigar + ci, "%d%c", cnt, op);
     }
     res.cigar[ci] = '\0';
 
     /* --- free --- */
-    for(int k = 0; k <= qlen; k++){
-        free(H[k]); free(E[k]); free(F[k]); free(tb[k]);
+    for (int k = 0; k <= qlen; k++)
+    {
+        free(H[k]);
+        free(E[k]);
+        free(F[k]);
+        free(tb[k]);
     }
-    free(H); free(E); free(F); free(tb);
+    free(H);
+    free(E);
+    free(F);
+    free(tb);
 
     printf("Best score = %d\n", best_score);
-printf("Best cell  = (%d,%d)\n", best_i, best_j);
+    printf("Best cell  = (%d,%d)\n", best_i, best_j);
     return res;
 }
