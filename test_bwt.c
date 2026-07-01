@@ -6,7 +6,7 @@
 
 int main(void)
 {
-    const char *text = "ACGTACGTACGT$";
+    const char *text = "GATTC$";
     uint64_t n = strlen(text) - 1;
 
     /* 1. Build Index ตามลำดับ */
@@ -21,7 +21,7 @@ int main(void)
         printf("%" PRIu64 "\t%u\t%s\n", i, sa->sa[i], text + sa->sa[i]);
 
     /* 3. ทดสอบการค้นหา (SMEMs) */
-    const char *read = "ACGTACGT";
+    const char *read = "GATC";
     uint64_t m = strlen(read);
     
     // ใช้ขนาดที่เหมาะสม หรือจัดการแบบ Dynamic ถ้า Read ยาวขึ้น
@@ -64,7 +64,7 @@ int main(void)
 
     /* 4. Smith-Waterman Extension */
     printf("\n--- Smith-Waterman ---\n");
-    const char *ref = "ACGTACGTACGT";
+    const char *ref = "GATTC";
     SWResult r = sw_extend(read, (int)m, ref, (int)strlen(ref));
 
     printf("score : %d\n", r.score);
